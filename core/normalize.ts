@@ -1,6 +1,4 @@
 /**
- * core/normalize.ts
- *
  * Sits between adapters and the graph builder.
  * Adapters emit raw RawDetection objects; this module normalizes them into
  * well-typed ApiCall objects that the graph builder can safely consume.

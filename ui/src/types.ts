@@ -3,8 +3,8 @@ export type NodeKind = 'frontend' | 'endpoint' | 'backend';
 
 export interface FlowNodeData {
   label: string;
-  filePath?: string;   // relative path — for open-file + tooltip
-  endpoint?: string;   // /api/... — for tooltip
+  sourceFile?: string;   // relative path — for open-file + tooltip
+  endpoint?: string;     // /api/... — for tooltip
   method?: string;     // GET | POST | ...
   kind: NodeKind;
 }
@@ -35,5 +35,5 @@ export type WebviewMessage =
 
 export type ExtensionMessage =
   | { type: 'ready' }
-  | { type: 'openFile'; filePath: string }
+  | { type: 'openFile'; sourceFile: string }
   | { type: 'rescan' };

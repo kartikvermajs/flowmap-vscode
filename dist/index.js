@@ -300,7 +300,7 @@ function buildGraph(connections) {
       const fileId = `file::${conn.sourceFile}`;
       addNode(fileId, {
         label: shortLabel(conn.sourceFile),
-        filePath: conn.sourceFile,
+        sourceFile: conn.sourceFile,
         kind: "frontend"
       }, "left");
       addNode(endpointId, {
@@ -321,7 +321,7 @@ function buildGraph(connections) {
       const routeId = `route::${conn.sourceFile}`;
       addNode(routeId, {
         label: shortLabel(conn.sourceFile),
-        filePath: conn.sourceFile,
+        sourceFile: conn.sourceFile,
         kind: "backend"
       }, "right");
       addNode(endpointId, {
@@ -416,16 +416,16 @@ function showWebview(context, graph, workspaceRoot) {
           currentPanel?.webview.postMessage({ type: "update", graph });
           break;
         case "openFile": {
-          const filePath = message.filePath;
-          if (!filePath) {
+          const sourceFile = message.sourceFile;
+          if (!sourceFile) {
             break;
           }
-          const absPath = path2.join(workspaceRoot, filePath);
+          const absPath = path2.join(workspaceRoot, sourceFile);
           try {
             const doc = await vscode.workspace.openTextDocument(absPath);
             await vscode.window.showTextDocument(doc, { preview: false });
           } catch {
-            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${filePath}`);
+            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${sourceFile}`);
           }
           break;
         }

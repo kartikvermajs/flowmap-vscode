@@ -21,7 +21,7 @@ const FlowmapNode = memo(({ data, selected }: NodeProps<FlowNodeData>) => {
   const tooltip =
     data.kind === 'endpoint'
       ? `Endpoint: ${data.endpoint}\nMethod: ${data.method}`
-      : `File: ${data.filePath}`;
+      : `File: ${data.sourceFile}`;
 
   return (
     <div

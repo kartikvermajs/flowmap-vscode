@@ -47,7 +47,6 @@ export function scanNextJs(content: string, relPath: string): RawDetection[] {
   const results: RawDetection[] = [];
   let match: RegExpExecArray | null;
 
-  // Plain string fetch()
   FETCH_LITERAL_REGEX.lastIndex = 0;
   while ((match = FETCH_LITERAL_REGEX.exec(content)) !== null) {
     results.push({
@@ -59,7 +58,6 @@ export function scanNextJs(content: string, relPath: string): RawDetection[] {
     });
   }
 
-  // Template literal fetch()
   FETCH_TEMPLATE_REGEX.lastIndex = 0;
   while ((match = FETCH_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({
@@ -71,7 +69,6 @@ export function scanNextJs(content: string, relPath: string): RawDetection[] {
     });
   }
 
-  // axios.<method>(url)
   AXIOS_LITERAL_REGEX.lastIndex = 0;
   while ((match = AXIOS_LITERAL_REGEX.exec(content)) !== null) {
     results.push({

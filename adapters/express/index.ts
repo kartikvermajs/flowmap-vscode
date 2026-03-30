@@ -33,7 +33,6 @@ export function scanExpress(content: string, relPath: string): RawDetection[] {
   const results: RawDetection[] = [];
   let match: RegExpExecArray | null;
 
-  // Literal string routes
   ROUTE_REGEX.lastIndex = 0;
   while ((match = ROUTE_REGEX.exec(content)) !== null) {
     results.push({
@@ -45,7 +44,6 @@ export function scanExpress(content: string, relPath: string): RawDetection[] {
     });
   }
 
-  // Template literal routes
   ROUTE_TEMPLATE_REGEX.lastIndex = 0;
   while ((match = ROUTE_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({

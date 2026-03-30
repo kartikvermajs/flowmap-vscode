@@ -156,9 +156,9 @@ export default function App() {
   }, []);
 
   const handleNodeClick = useCallback((node: FlowNode) => {
-    if (node.data.filePath) {
+    if (node.data.sourceFile) {
       // Open file in VS Code editor
-      vscode.postMessage({ type: 'openFile', filePath: node.data.filePath });
+      vscode.postMessage({ type: 'openFile', sourceFile: node.data.sourceFile });
     }
     if (node.data.kind === 'endpoint') {
       // Toggle filter on/off

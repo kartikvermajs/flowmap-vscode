@@ -4,8 +4,8 @@ import * as path from 'path';
 export type NodeKind = 'frontend' | 'endpoint' | 'backend';
 
 export interface FlowNodeData {
-  label: string;         // short display name
-  filePath?: string;     // full relative path (for tooltip + open-file)
+  label: string;
+  sourceFile?: string;   // full relative path (for tooltip + open-file)
   endpoint?: string;     // e.g. /api/users
   method?: string;       // GET | POST | ...
   confidence?: number;   // passed through for future UI use
@@ -111,9 +111,9 @@ export function buildGraph(connections: ApiCall[]): GraphData {
       const fileId = `file::${conn.sourceFile}`;
 
       addNode(fileId, {
-        label:    shortLabel(conn.sourceFile),
-        filePath: conn.sourceFile,
-        kind:     'frontend',
+        label:      shortLabel(conn.sourceFile),
+        sourceFile: conn.sourceFile,
+        kind:       'frontend',
       }, 'left');
 
       addNode(endpointId, {
@@ -135,9 +135,9 @@ export function buildGraph(connections: ApiCall[]): GraphData {
       const routeId = `route::${conn.sourceFile}`;
 
       addNode(routeId, {
-        label:    shortLabel(conn.sourceFile),
-        filePath: conn.sourceFile,
-        kind:     'backend',
+        label:      shortLabel(conn.sourceFile),
+        sourceFile: conn.sourceFile,
+        kind:       'backend',
       }, 'right');
 
       addNode(endpointId, {

@@ -66,7 +66,6 @@ function showWebview(
     ? vscode.window.activeTextEditor.viewColumn
     : undefined;
 
-  // Reuse the existing panel if we have one
   if (currentPanel) {
     currentPanel.reveal(column);
     currentPanel.webview.postMessage({ type: 'update', graph });
@@ -88,7 +87,6 @@ function showWebview(
 
   currentPanel.webview.html = getWebviewContent(context, currentPanel.webview);
 
-  // Handle messages from the webview
   currentPanel.webview.onDidReceiveMessage(
     async (message) => {
       switch (message.type) {
@@ -98,15 +96,14 @@ function showWebview(
           break;
 
         case 'openFile': {
-          // User clicked a node — open the file in the editor
-          const filePath: string = message.filePath;
-          if (!filePath) { break; }
-          const absPath = path.join(workspaceRoot, filePath);
+          const sourceFile: string = message.sourceFile;
+          if (!sourceFile) { break; }
+          const absPath = path.join(workspaceRoot, sourceFile);
           try {
             const doc = await vscode.workspace.openTextDocument(absPath);
             await vscode.window.showTextDocument(doc, { preview: false });
           } catch {
-            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${filePath}`);
+            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${sourceFile}`);
           }
           break;
         }
