@@ -1,28 +1,175 @@
-* {
+/* ─── Reset & base ─────────────────────────────────────────────── */
+*, *::before, *::after {
   box-sizing: border-box;
   margin: 0;
   padding: 0;
 }
 
 body {
-  font-family: 'Segoe UI', system-ui, sans-serif;
+  font-family: 'Segoe UI', system-ui, -apple-system, sans-serif;
+  font-size: 13px;
   background: #1e1e2e;
   color: #cdd6f4;
   overflow: hidden;
 }
 
-/* Overlay for waiting / empty states */
+/* ─── App layout ────────────────────────────────────────────────── */
+.app-root {
+  display: flex;
+  width: 100vw;
+  height: 100vh;
+  overflow: hidden;
+}
+
+/* ─── Sidebar ───────────────────────────────────────────────────── */
+.sidebar {
+  width: 220px;
+  flex-shrink: 0;
+  background: #181825;
+  border-right: 1px solid #313244;
+  display: flex;
+  flex-direction: column;
+  gap: 0;
+  overflow-y: auto;
+}
+
+.sidebar__header {
+  padding: 14px 12px 12px;
+  border-bottom: 1px solid #313244;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 8px;
+}
+
+.sidebar__logo {
+  font-weight: 700;
+  font-size: 13px;
+  color: #cdd6f4;
+  letter-spacing: 0.01em;
+}
+
+.sidebar__rescan-btn {
+  background: #313244;
+  border: 1px solid #45475a;
+  border-radius: 6px;
+  color: #cdd6f4;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 4px 8px;
+  transition: background 0.15s, border-color 0.15s;
+  white-space: nowrap;
+}
+.sidebar__rescan-btn:hover:not(:disabled) {
+  background: #45475a;
+  border-color: #7c3aed;
+}
+.sidebar__rescan-btn:disabled {
+  opacity: 0.5;
+  cursor: not-allowed;
+}
+.sidebar__rescan-btn--loading {
+  animation: pulse 1s ease infinite;
+}
+
+.sidebar__section-title {
+  padding: 12px 12px 6px;
+  font-size: 10px;
+  font-weight: 600;
+  text-transform: uppercase;
+  letter-spacing: 0.08em;
+  color: #6c7086;
+}
+
+.sidebar__filter-list {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  padding: 0 8px;
+}
+
+.sidebar__filter-item {
+  width: 100%;
+  text-align: left;
+  background: transparent;
+  border: 1px solid transparent;
+  border-radius: 6px;
+  color: #bac2de;
+  cursor: pointer;
+  font-size: 11px;
+  padding: 5px 8px;
+  transition: background 0.15s, border-color 0.15s, color 0.15s;
+  display: flex;
+  align-items: center;
+  gap: 5px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+.sidebar__filter-item:hover {
+  background: #313244;
+  color: #cdd6f4;
+}
+.sidebar__filter-item--active {
+  background: rgba(124, 58, 237, 0.2);
+  border-color: #7c3aed;
+  color: #cdd6f4;
+}
+
+.sidebar__method-badge {
+  background: #313244;
+  border-radius: 4px;
+  color: #0ea5e9;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.05em;
+  padding: 1px 4px;
+  flex-shrink: 0;
+}
+
+.sidebar__legend {
+  margin-top: auto;
+  border-top: 1px solid #313244;
+  padding: 12px;
+  display: flex;
+  flex-direction: column;
+  gap: 6px;
+}
+
+.sidebar__legend-item {
+  display: flex;
+  align-items: center;
+  gap: 7px;
+  font-size: 11px;
+  color: #a6adc8;
+}
+
+.sidebar__dot {
+  width: 9px;
+  height: 9px;
+  border-radius: 50%;
+  flex-shrink: 0;
+}
+
+/* ─── Canvas ────────────────────────────────────────────────────── */
+.canvas-area {
+  flex: 1;
+  position: relative;
+  overflow: hidden;
+}
+
+/* ─── Overlay (waiting / empty) ─────────────────────────────────── */
 .overlay {
   position: absolute;
   inset: 0;
-  z-index: 10;
+  z-index: 20;
   display: flex;
   flex-direction: column;
   align-items: center;
   justify-content: center;
-  gap: 12px;
-  background: rgba(30, 30, 46, 0.85);
-  backdrop-filter: blur(4px);
+  gap: 14px;
+  background: rgba(30, 30, 46, 0.9);
+  backdrop-filter: blur(6px);
 }
 
 .overlay p {
@@ -35,59 +182,115 @@ body {
   color: #6c7086;
   max-width: 320px;
   text-align: center;
+  line-height: 1.5;
 }
 
-.empty-icon {
-  font-size: 3rem;
+.overlay__rescan-btn {
+  background: #7c3aed;
+  border: none;
+  border-radius: 8px;
+  color: #fff;
+  cursor: pointer;
+  font-size: 12px;
+  font-weight: 600;
+  margin-top: 6px;
+  padding: 8px 18px;
+  transition: background 0.15s;
+}
+.overlay__rescan-btn:hover {
+  background: #6d28d9;
 }
 
-/* Spinner */
+.empty-icon { font-size: 3rem; }
+
+/* ─── Spinner ───────────────────────────────────────────────────── */
 .spinner {
-  width: 40px;
-  height: 40px;
-  border: 4px solid #313244;
+  width: 38px;
+  height: 38px;
+  border: 3px solid #313244;
   border-top-color: #7c3aed;
   border-radius: 50%;
-  animation: spin 0.8s linear infinite;
+  animation: spin 0.75s linear infinite;
 }
 
 @keyframes spin {
   to { transform: rotate(360deg); }
 }
 
-/* React Flow overrides */
-.react-flow__node {
-  background: #313244;
-  border: 1px solid #45475a;
-  border-radius: 8px;
+@keyframes pulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.5; }
+}
+
+/* ─── Custom React Flow nodes ───────────────────────────────────── */
+.fmap-node {
+  background: #24273a;
+  border: 2px solid #45475a;
+  border-radius: 10px;
+  box-shadow: 0 2px 10px rgba(0, 0, 0, 0.35);
+  cursor: pointer;
+  min-width: 140px;
+  max-width: 200px;
+  padding: 8px 12px 9px;
+  transition: box-shadow 0.15s, border-color 0.15s, transform 0.1s;
+  position: relative;
+}
+.fmap-node:hover {
+  box-shadow: 0 0 0 3px rgba(124, 58, 237, 0.3), 0 4px 14px rgba(0,0,0,0.4);
+  transform: translateY(-1px);
+}
+.fmap-node--selected {
+  box-shadow: 0 0 0 3px rgba(14, 165, 233, 0.5), 0 4px 18px rgba(0,0,0,0.4) !important;
+}
+
+.fmap-node__badge {
+  border-radius: 4px;
+  color: #fff;
+  display: inline-block;
+  font-size: 9px;
+  font-weight: 700;
+  letter-spacing: 0.08em;
+  margin-bottom: 5px;
+  padding: 2px 6px;
+  text-transform: uppercase;
+}
+
+.fmap-node__label {
   color: #cdd6f4;
-  font-size: 12px;
-  padding: 8px 14px;
-  box-shadow: 0 2px 8px rgba(0, 0, 0, 0.4);
+  font-size: 11.5px;
+  font-weight: 500;
+  line-height: 1.35;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+  word-break: break-all;
 }
 
-.react-flow__node:hover {
-  border-color: #7c3aed;
-  box-shadow: 0 0 0 2px rgba(124, 58, 237, 0.35);
+.fmap-node__method {
+  font-size: 10px;
+  font-weight: 700;
+  letter-spacing: 0.06em;
+  margin-top: 4px;
+  text-transform: uppercase;
 }
 
-.react-flow__edge-path {
-  stroke: #7c3aed;
-  stroke-width: 2;
-}
-
+/* ─── React Flow overrides ──────────────────────────────────────── */
 .react-flow__controls {
-  background: #313244;
-  border: 1px solid #45475a;
+  background: #24273a;
+  border: 1px solid #313244;
   border-radius: 8px;
+  box-shadow: 0 2px 8px rgba(0,0,0,0.3);
 }
 
 .react-flow__controls-button {
-  background: #313244;
-  border-bottom: 1px solid #45475a;
+  background: #24273a;
+  border-bottom: 1px solid #313244;
   fill: #cdd6f4;
+  transition: background 0.15s;
+}
+.react-flow__controls-button:hover {
+  background: #313244;
 }
 
-.react-flow__controls-button:hover {
-  background: #45475a;
-}
+.react-flow__edge-textbg { fill: #181825; }
+.react-flow__edge-text   { fill: #bac2de; font-size: 10px; font-weight: 600; }

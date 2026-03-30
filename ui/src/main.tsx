@@ -12,7 +12,3 @@ root.render(
     <App />
   </StrictMode>
 );
-
-// Tell the extension host we are ready to receive graph data
-const vscode = acquireVsCodeApi();
-vscode.postMessage({ type: 'ready' });

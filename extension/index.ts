@@ -1,7 +1,6 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
-import * as fs from 'fs';
-import { parseWorkspace } from '../core/parser';
+import { parseWorkspace, clearCache } from '../core/parser';
 import { buildGraph } from '../graph/builder';
 
 let currentPanel: vscode.WebviewPanel | undefined;
@@ -29,7 +28,7 @@ export function activate(context: vscode.ExtensionContext) {
         async (progress) => {
           progress.report({ increment: 10, message: 'Finding files...' });
 
-          // Find all relevant source files, excluding common noise directories
+          // Find all relevant source files, excluding noise directories
           const fileUris = await vscode.workspace.findFiles(
             '**/*.{ts,tsx,js,jsx,mjs,cjs}',
             '{**/node_modules/**,**/.next/**,**/dist/**,**/build/**,.git/**}'
@@ -45,13 +44,11 @@ export function activate(context: vscode.ExtensionContext) {
 
           console.log('[FlowMap] Connections found:', connections.length);
           connections.forEach((c) =>
-            console.log(
-              `  [${c.type.toUpperCase()}] ${c.from} → ${c.method} ${c.to}`
-            )
+            console.log(`  [${c.type.toUpperCase()}] ${c.sourceFile} → ${c.method} ${c.normalizedPath} (confidence: ${c.confidence})`)
           );
 
           progress.report({ increment: 20, message: 'Opening webview...' });
-          showWebview(context, graph);
+          showWebview(context, graph, workspaceRoot);
         }
       );
     }
@@ -62,7 +59,8 @@ export function activate(context: vscode.ExtensionContext) {
 
 function showWebview(
   context: vscode.ExtensionContext,
-  graph: { nodes: unknown[]; edges: unknown[] }
+  graph: ReturnType<typeof buildGraph>,
+  workspaceRoot: string
 ) {
   const column = vscode.window.activeTextEditor
     ? vscode.window.activeTextEditor.viewColumn
@@ -84,16 +82,40 @@ function showWebview(
       localResourceRoots: [
         vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'),
       ],
+      retainContextWhenHidden: true,
     }
   );
 
   currentPanel.webview.html = getWebviewContent(context, currentPanel.webview);
 
-  // Send graph data once the webview signals it's ready
+  // Handle messages from the webview
   currentPanel.webview.onDidReceiveMessage(
-    (message) => {
-      if (message.type === 'ready') {
-        currentPanel?.webview.postMessage({ type: 'update', graph });
+    async (message) => {
+      switch (message.type) {
+        case 'ready':
+          // Webview is mounted — send the current graph
+          currentPanel?.webview.postMessage({ type: 'update', graph });
+          break;
+
+        case 'openFile': {
+          // User clicked a node — open the file in the editor
+          const filePath: string = message.filePath;
+          if (!filePath) { break; }
+          const absPath = path.join(workspaceRoot, filePath);
+          try {
+            const doc = await vscode.workspace.openTextDocument(absPath);
+            await vscode.window.showTextDocument(doc, { preview: false });
+          } catch {
+            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${filePath}`);
+          }
+          break;
+        }
+
+        case 'rescan':
+          // User requested a re-scan from the webview
+          clearCache();
+          await vscode.commands.executeCommand('flowmap.scanProject');
+          break;
       }
     },
     undefined,
@@ -113,7 +135,6 @@ function getWebviewContent(
 ): string {
   const uiDistPath = path.join(context.extensionPath, 'dist', 'webview');
 
-  // Load webview assets built by Vite
   const scriptUri = webview.asWebviewUri(
     vscode.Uri.file(path.join(uiDistPath, 'index.js'))
   );
@@ -144,8 +165,7 @@ function getWebviewContent(
 
 function getNonce(): string {
   let text = '';
-  const possible =
-    'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
+  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
   for (let i = 0; i < 32; i++) {
     text += possible.charAt(Math.floor(Math.random() * possible.length));
   }

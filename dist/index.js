@@ -42,11 +42,28 @@ var fs = __toESM(require("fs"));
 var path = __toESM(require("path"));
 
 // adapters/nextjs/index.ts
-var FETCH_REGEX = /fetch\(\s*['"`](\/api\/[^'"`\s)]+)['"`]/g;
-var AXIOS_REGEX = /axios\.(get|post|put|delete|patch)\(\s*['"`](\/api\/[^'"`\s)]+)['"`]/g;
-var FRONTEND_EXTENSIONS = [".tsx", ".ts", ".jsx", ".js"];
+var FETCH_LITERAL_REGEX = /fetch\(\s*['"](\/?(?:\/api\/[^'"\s)]+))['"]\s*(?:,\s*\{[^}]*method\s*:\s*['"]([A-Za-z]+)['"][^}]*\})?/g;
+var FETCH_TEMPLATE_REGEX = /fetch\(\s*`(\/api\/[^`\s)]+)`/g;
+var AXIOS_LITERAL_REGEX = /axios\.(get|post|put|delete|patch|head|options)\(\s*['"](\/?\/api\/[^'"\s)]+)['"]/g;
+var FRONTEND_EXTENSIONS = /* @__PURE__ */ new Set([".tsx", ".ts", ".jsx", ".js", ".mjs"]);
+var SKIP_PATH_PATTERNS = [
+  /node_modules/,
+  /\.next\//,
+  /dist\//,
+  /build\//,
+  /server\//,
+  /pages\/api\//,
+  /app\/api\//
+];
 function isFrontendFile(filePath) {
-  return FRONTEND_EXTENSIONS.some((ext) => filePath.endsWith(ext));
+  const ext = "." + filePath.split(".").pop();
+  if (!FRONTEND_EXTENSIONS.has(ext)) {
+    return false;
+  }
+  if (SKIP_PATH_PATTERNS.some((p) => p.test(filePath))) {
+    return false;
+  }
+  return true;
 }
 function scanNextJs(content, relPath) {
   if (!isFrontendFile(relPath)) {
@@ -54,49 +71,152 @@ function scanNextJs(content, relPath) {
   }
   const results = [];
   let match;
-  while ((match = FETCH_REGEX.exec(content)) !== null) {
+  FETCH_LITERAL_REGEX.lastIndex = 0;
+  while ((match = FETCH_LITERAL_REGEX.exec(content)) !== null) {
     results.push({
-      from: relPath,
-      to: match[1],
-      method: "unknown",
-      // fetch does not expose method in the URL expression
-      type: "frontend"
+      sourceFile: relPath,
+      rawPath: match[1],
+      method: match[2] ? match[2].toUpperCase() : "GET",
+      type: "frontend",
+      pathKind: "literal"
     });
   }
-  while ((match = AXIOS_REGEX.exec(content)) !== null) {
+  FETCH_TEMPLATE_REGEX.lastIndex = 0;
+  while ((match = FETCH_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({
-      from: relPath,
-      to: match[2],
+      sourceFile: relPath,
+      rawPath: match[1],
+      method: "GET",
+      // can't infer method from template alone
+      type: "frontend",
+      pathKind: "template"
+      // confidence 0.7
+    });
+  }
+  AXIOS_LITERAL_REGEX.lastIndex = 0;
+  while ((match = AXIOS_LITERAL_REGEX.exec(content)) !== null) {
+    results.push({
+      sourceFile: relPath,
+      rawPath: match[2],
       method: match[1].toUpperCase(),
-      type: "frontend"
+      type: "frontend",
+      pathKind: "literal"
     });
   }
   return results;
 }
 
 // adapters/express/index.ts
-var ROUTE_REGEX = /(?:app|router)\.(get|post|put|delete|patch)\(\s*['"`](\/[^'"`\s)]+)['"`]/g;
+var ROUTE_REGEX = /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*['"](\/?\/[^'"\s)]+)['"]/g;
+var ROUTE_TEMPLATE_REGEX = /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*`(\/[^`\s)]+)`/g;
 function scanExpress(content, relPath) {
   if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(relPath)) {
     return [];
   }
+  const hasExpressImport = /require\s*\(\s*['"`]express['"`]/.test(content) || /from\s+['"`]express['"`]/.test(content) || /(?:app|router)\s*=\s*(?:express\(\)|Router\(\)|express\.Router\(\))/.test(content);
+  if (!hasExpressImport && /\.(tsx|jsx)$/.test(relPath)) {
+    return [];
+  }
   const results = [];
   let match;
+  ROUTE_REGEX.lastIndex = 0;
   while ((match = ROUTE_REGEX.exec(content)) !== null) {
     results.push({
-      from: relPath,
-      to: match[2],
-      method: match[1].toUpperCase(),
-      type: "backend"
+      sourceFile: relPath,
+      rawPath: match[2],
+      method: match[1].toUpperCase() === "USE" ? "ALL" : match[1].toUpperCase(),
+      type: "backend",
+      pathKind: "literal"
+    });
+  }
+  ROUTE_TEMPLATE_REGEX.lastIndex = 0;
+  while ((match = ROUTE_TEMPLATE_REGEX.exec(content)) !== null) {
+    results.push({
+      sourceFile: relPath,
+      rawPath: match[2],
+      method: match[1].toUpperCase() === "USE" ? "ALL" : match[1].toUpperCase(),
+      type: "backend",
+      pathKind: "template"
+      // confidence 0.7
     });
   }
   return results;
 }
 
+// core/normalize.ts
+var CONFIDENCE = {
+  literal: 1,
+  template: 0.7,
+  variable: 0.4
+};
+function normalizePath(raw) {
+  let p = raw;
+  p = p.split("?")[0].split("#")[0];
+  p = p.replace(/\/\/+/g, "/");
+  if (!p.startsWith("/")) {
+    p = "/" + p;
+  }
+  if (p.length > 1) {
+    p = p.replace(/\/+$/, "");
+  }
+  return p;
+}
+var ALLOWED_METHODS = /* @__PURE__ */ new Set([
+  "GET",
+  "POST",
+  "PUT",
+  "DELETE",
+  "PATCH",
+  "HEAD",
+  "OPTIONS",
+  "ALL"
+]);
+function coerceMethod(raw) {
+  if (!raw) {
+    return "unknown";
+  }
+  const upper = raw.toUpperCase();
+  return ALLOWED_METHODS.has(upper) ? upper : "unknown";
+}
+function normalizeDetections(detections, minConfidence = 0) {
+  const calls = [];
+  for (const d of detections) {
+    const confidence = CONFIDENCE[d.pathKind] ?? 0.4;
+    if (confidence < minConfidence) {
+      continue;
+    }
+    calls.push({
+      sourceFile: d.sourceFile,
+      method: coerceMethod(d.method),
+      rawPath: d.rawPath,
+      normalizedPath: normalizePath(d.rawPath),
+      confidence,
+      type: d.type
+    });
+  }
+  return calls;
+}
+
 // core/parser.ts
-async function parseWorkspace(filePaths, workspaceRoot) {
-  const connections = [];
+var fileCache = /* @__PURE__ */ new Map();
+function clearCache() {
+  fileCache.clear();
+}
+async function parseWorkspace(filePaths, workspaceRoot, minConfidence = 0) {
+  const allCalls = [];
   for (const absPath of filePaths) {
+    let stat;
+    try {
+      stat = fs.statSync(absPath);
+    } catch {
+      continue;
+    }
+    const mtime = stat.mtimeMs;
+    const cached = fileCache.get(absPath);
+    if (cached && cached.mtime === mtime) {
+      allCalls.push(...cached.results);
+      continue;
+    }
     let content;
     try {
       content = fs.readFileSync(absPath, "utf-8");
@@ -104,66 +224,120 @@ async function parseWorkspace(filePaths, workspaceRoot) {
       continue;
     }
     const relPath = path.relative(workspaceRoot, absPath).replace(/\\/g, "/");
-    const nextjsResults = scanNextJs(content, relPath);
-    const expressResults = scanExpress(content, relPath);
-    connections.push(...nextjsResults, ...expressResults);
+    const raw = [
+      ...scanNextJs(content, relPath),
+      ...scanExpress(content, relPath)
+    ];
+    const normalized = normalizeDetections(raw, minConfidence);
+    fileCache.set(absPath, { mtime, results: normalized });
+    allCalls.push(...normalized);
   }
-  return connections;
+  const seen = /* @__PURE__ */ new Set();
+  const unique = [];
+  for (const call of allCalls) {
+    const key = `${call.type}::${call.sourceFile}::${call.method}::${call.normalizedPath}`;
+    if (!seen.has(key)) {
+      seen.add(key);
+      unique.push(call);
+    }
+  }
+  return unique;
 }
 
 // graph/builder.ts
+function shortLabel(relPath) {
+  const parts = relPath.split("/");
+  if (parts.length <= 2) {
+    return relPath;
+  }
+  return parts.slice(-2).join("/");
+}
+var COL = { left: 50, center: 350, right: 650 };
+var ROW_SPACING = 90;
 function buildGraph(connections) {
   const nodeMap = /* @__PURE__ */ new Map();
+  const edgeSet = /* @__PURE__ */ new Set();
   const edges = [];
-  let xFrontend = 0;
-  let xBackend = 600;
-  let yEndpoint = 0;
-  const SPACING = 100;
-  function getOrCreateNode(id, label, column) {
-    if (!nodeMap.has(id)) {
-      const x = column === "left" ? 0 : column === "center" ? 300 : 600;
-      const y = column === "left" ? xFrontend++ * SPACING : column === "right" ? xBackend++ * SPACING : yEndpoint++ * SPACING;
-      nodeMap.set(id, {
-        id,
-        data: { label },
-        position: { x, y }
-      });
+  let frontendRow = 0;
+  let endpointRow = 0;
+  let backendRow = 0;
+  function addNode(id, data, col) {
+    if (nodeMap.has(id)) {
+      return;
     }
-    return nodeMap.get(id);
+    let y;
+    if (col === "left") {
+      y = frontendRow++ * ROW_SPACING;
+    } else if (col === "right") {
+      y = backendRow++ * ROW_SPACING;
+    } else {
+      y = endpointRow++ * ROW_SPACING;
+    }
+    nodeMap.set(id, {
+      id,
+      type: "flowmapNode",
+      data,
+      position: { x: COL[col], y }
+    });
+  }
+  function addEdge(id, source, target, label, animated) {
+    if (edgeSet.has(id)) {
+      return;
+    }
+    edgeSet.add(id);
+    edges.push({
+      id,
+      source,
+      target,
+      label,
+      animated,
+      style: { stroke: animated ? "#7c3aed" : "#45475a", strokeWidth: 2 }
+    });
   }
   for (const conn of connections) {
+    const endpointId = `endpoint::${conn.method}::${conn.normalizedPath}`;
     if (conn.type === "frontend") {
-      const fileNodeId = `file::${conn.from}`;
-      const endpointNodeId = `endpoint::${conn.method}::${conn.to}`;
-      getOrCreateNode(fileNodeId, conn.from, "left");
-      getOrCreateNode(
-        endpointNodeId,
-        `${conn.method !== "unknown" ? `[${conn.method}] ` : ""}${conn.to}`,
-        "center"
+      const fileId = `file::${conn.sourceFile}`;
+      addNode(fileId, {
+        label: shortLabel(conn.sourceFile),
+        filePath: conn.sourceFile,
+        kind: "frontend"
+      }, "left");
+      addNode(endpointId, {
+        label: `${conn.method} ${conn.normalizedPath}`,
+        endpoint: conn.normalizedPath,
+        method: conn.method,
+        confidence: conn.confidence,
+        kind: "endpoint"
+      }, "center");
+      addEdge(
+        `fedge::${fileId}::${endpointId}`,
+        fileId,
+        endpointId,
+        conn.method !== "unknown" ? conn.method : void 0,
+        true
       );
-      edges.push({
-        id: `edge::${fileNodeId}::${endpointNodeId}`,
-        source: fileNodeId,
-        target: endpointNodeId,
-        animated: true,
-        label: conn.method !== "unknown" ? conn.method : void 0
-      });
     } else {
-      const routeNodeId = `route::${conn.from}`;
-      const endpointNodeId = `endpoint::${conn.method}::${conn.to}`;
-      getOrCreateNode(routeNodeId, conn.from, "right");
-      getOrCreateNode(
-        endpointNodeId,
-        `${conn.method !== "unknown" ? `[${conn.method}] ` : ""}${conn.to}`,
-        "center"
+      const routeId = `route::${conn.sourceFile}`;
+      addNode(routeId, {
+        label: shortLabel(conn.sourceFile),
+        filePath: conn.sourceFile,
+        kind: "backend"
+      }, "right");
+      addNode(endpointId, {
+        label: `${conn.method} ${conn.normalizedPath}`,
+        endpoint: conn.normalizedPath,
+        method: conn.method,
+        confidence: conn.confidence,
+        kind: "endpoint"
+      }, "center");
+      addEdge(
+        `bedge::${endpointId}::${routeId}`,
+        endpointId,
+        routeId,
+        conn.method,
+        false
       );
-      edges.push({
-        id: `edge::${routeNodeId}::${endpointNodeId}`,
-        source: endpointNodeId,
-        target: routeNodeId,
-        animated: false,
-        label: conn.method
-      });
     }
   }
   return {
@@ -205,19 +379,17 @@ function activate(context) {
           const graph = buildGraph(connections);
           console.log("[FlowMap] Connections found:", connections.length);
           connections.forEach(
-            (c) => console.log(
-              `  [${c.type.toUpperCase()}] ${c.from} \u2192 ${c.method} ${c.to}`
-            )
+            (c) => console.log(`  [${c.type.toUpperCase()}] ${c.sourceFile} \u2192 ${c.method} ${c.normalizedPath} (confidence: ${c.confidence})`)
           );
           progress.report({ increment: 20, message: "Opening webview..." });
-          showWebview(context, graph);
+          showWebview(context, graph, workspaceRoot);
         }
       );
     }
   );
   context.subscriptions.push(disposable);
 }
-function showWebview(context, graph) {
+function showWebview(context, graph, workspaceRoot) {
   const column = vscode.window.activeTextEditor ? vscode.window.activeTextEditor.viewColumn : void 0;
   if (currentPanel) {
     currentPanel.reveal(column);
@@ -232,14 +404,35 @@ function showWebview(context, graph) {
       enableScripts: true,
       localResourceRoots: [
         vscode.Uri.joinPath(context.extensionUri, "dist", "webview")
-      ]
+      ],
+      retainContextWhenHidden: true
     }
   );
   currentPanel.webview.html = getWebviewContent(context, currentPanel.webview);
   currentPanel.webview.onDidReceiveMessage(
-    (message) => {
-      if (message.type === "ready") {
-        currentPanel?.webview.postMessage({ type: "update", graph });
+    async (message) => {
+      switch (message.type) {
+        case "ready":
+          currentPanel?.webview.postMessage({ type: "update", graph });
+          break;
+        case "openFile": {
+          const filePath = message.filePath;
+          if (!filePath) {
+            break;
+          }
+          const absPath = path2.join(workspaceRoot, filePath);
+          try {
+            const doc = await vscode.workspace.openTextDocument(absPath);
+            await vscode.window.showTextDocument(doc, { preview: false });
+          } catch {
+            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${filePath}`);
+          }
+          break;
+        }
+        case "rescan":
+          clearCache();
+          await vscode.commands.executeCommand("flowmap.scanProject");
+          break;
       }
     },
     void 0,

@@ -1,9 +1,21 @@
-import type { ApiConnection } from '../core/parser';
+import type { ApiCall } from '../core/parser';
+import * as path from 'path';
+
+export type NodeKind = 'frontend' | 'endpoint' | 'backend';
+
+export interface FlowNodeData {
+  label: string;         // short display name
+  filePath?: string;     // full relative path (for tooltip + open-file)
+  endpoint?: string;     // e.g. /api/users
+  method?: string;       // GET | POST | ...
+  confidence?: number;   // passed through for future UI use
+  kind: NodeKind;
+}
 
 export interface FlowNode {
   id: string;
-  type?: string;
-  data: { label: string };
+  type: string;          // 'flowmapNode' — our custom React Flow node type
+  data: FlowNodeData;
   position: { x: number; y: number };
 }
 
@@ -13,6 +25,7 @@ export interface FlowEdge {
   target: string;
   label?: string;
   animated?: boolean;
+  style?: Record<string, string | number>;
 }
 
 export interface GraphData {
@@ -20,85 +33,128 @@ export interface GraphData {
   edges: FlowEdge[];
 }
 
+/** Return just the filename (or last two path segments for context) */
+function shortLabel(relPath: string): string {
+  const parts = relPath.split('/');
+  if (parts.length <= 2) { return relPath; }
+  return parts.slice(-2).join('/');
+}
+
 /**
- * Convert a list of ApiConnections into React Flow nodes and edges.
+ * Column X positions for the 3-column layout:
+ *   Frontend files (left) → API endpoints (center) → Backend files (right)
+ */
+const COL = { left: 50, center: 350, right: 650 } as const;
+const ROW_SPACING = 90;
+
+/**
+ * Convert a list of normalized ApiCalls into React Flow nodes and edges.
  *
  * Node IDs:
- *   - Frontend files  → "file::<relPath>"
- *   - API endpoints   → "endpoint::<method>::<path>"
- *   - Backend routes  → "route::<relPath>"
+ *   - Frontend files  → "file::<sourceFile>"
+ *   - API endpoints   → "endpoint::<method>::<normalizedPath>"
+ *   - Backend routes  → "route::<sourceFile>"
  */
-export function buildGraph(connections: ApiConnection[]): GraphData {
+export function buildGraph(connections: ApiCall[]): GraphData {
   const nodeMap = new Map<string, FlowNode>();
+  const edgeSet = new Set<string>();
   const edges: FlowEdge[] = [];
 
-  let xFrontend = 0;
-  let xBackend = 600;
-  let yEndpoint = 0;
-  const SPACING = 100;
+  // Track row counters per column independently
+  let frontendRow = 0;
+  let endpointRow = 0;
+  let backendRow = 0;
 
-  function getOrCreateNode(
+  function addNode(
     id: string,
-    label: string,
-    column: 'left' | 'center' | 'right'
-  ): FlowNode {
-    if (!nodeMap.has(id)) {
-      const x = column === 'left' ? 0 : column === 'center' ? 300 : 600;
-      const y =
-        column === 'left'
-          ? xFrontend++ * SPACING
-          : column === 'right'
-          ? xBackend++ * SPACING
-          : yEndpoint++ * SPACING;
+    data: FlowNodeData,
+    col: 'left' | 'center' | 'right'
+  ): void {
+    if (nodeMap.has(id)) { return; }
+    let y: number;
+    if (col === 'left')   { y = frontendRow++  * ROW_SPACING; }
+    else if (col === 'right') { y = backendRow++   * ROW_SPACING; }
+    else                  { y = endpointRow++  * ROW_SPACING; }
 
-      nodeMap.set(id, {
-        id,
-        data: { label },
-        position: { x, y },
-      });
-    }
-    return nodeMap.get(id)!;
+    nodeMap.set(id, {
+      id,
+      type: 'flowmapNode',
+      data,
+      position: { x: COL[col], y },
+    });
+  }
+
+  function addEdge(
+    id: string,
+    source: string,
+    target: string,
+    label: string | undefined,
+    animated: boolean
+  ): void {
+    if (edgeSet.has(id)) { return; }
+    edgeSet.add(id);
+    edges.push({
+      id,
+      source,
+      target,
+      label,
+      animated,
+      style: { stroke: animated ? '#7c3aed' : '#45475a', strokeWidth: 2 },
+    });
   }
 
   for (const conn of connections) {
+    // Endpoint node is shared — keyed by method + normalized path
+    const endpointId = `endpoint::${conn.method}::${conn.normalizedPath}`;
+
     if (conn.type === 'frontend') {
-      // Frontend file → API endpoint
-      const fileNodeId = `file::${conn.from}`;
-      const endpointNodeId = `endpoint::${conn.method}::${conn.to}`;
+      const fileId = `file::${conn.sourceFile}`;
 
-      getOrCreateNode(fileNodeId, conn.from, 'left');
-      getOrCreateNode(
-        endpointNodeId,
-        `${conn.method !== 'unknown' ? `[${conn.method}] ` : ''}${conn.to}`,
-        'center'
+      addNode(fileId, {
+        label:    shortLabel(conn.sourceFile),
+        filePath: conn.sourceFile,
+        kind:     'frontend',
+      }, 'left');
+
+      addNode(endpointId, {
+        label:      `${conn.method} ${conn.normalizedPath}`,
+        endpoint:   conn.normalizedPath,
+        method:     conn.method,
+        confidence: conn.confidence,
+        kind:       'endpoint',
+      }, 'center');
+
+      addEdge(
+        `fedge::${fileId}::${endpointId}`,
+        fileId,
+        endpointId,
+        conn.method !== 'unknown' ? conn.method : undefined,
+        true
       );
-
-      edges.push({
-        id: `edge::${fileNodeId}::${endpointNodeId}`,
-        source: fileNodeId,
-        target: endpointNodeId,
-        animated: true,
-        label: conn.method !== 'unknown' ? conn.method : undefined,
-      });
     } else {
-      // Backend route file → API endpoint
-      const routeNodeId = `route::${conn.from}`;
-      const endpointNodeId = `endpoint::${conn.method}::${conn.to}`;
+      const routeId = `route::${conn.sourceFile}`;
 
-      getOrCreateNode(routeNodeId, conn.from, 'right');
-      getOrCreateNode(
-        endpointNodeId,
-        `${conn.method !== 'unknown' ? `[${conn.method}] ` : ''}${conn.to}`,
-        'center'
+      addNode(routeId, {
+        label:    shortLabel(conn.sourceFile),
+        filePath: conn.sourceFile,
+        kind:     'backend',
+      }, 'right');
+
+      addNode(endpointId, {
+        label:      `${conn.method} ${conn.normalizedPath}`,
+        endpoint:   conn.normalizedPath,
+        method:     conn.method,
+        confidence: conn.confidence,
+        kind:       'endpoint',
+      }, 'center');
+
+      addEdge(
+        `bedge::${endpointId}::${routeId}`,
+        endpointId,
+        routeId,
+        conn.method,
+        false
       );
-
-      edges.push({
-        id: `edge::${routeNodeId}::${endpointNodeId}`,
-        source: endpointNodeId,
-        target: routeNodeId,
-        animated: false,
-        label: conn.method,
-      });
     }
   }
 

@@ -1,30 +1,59 @@
-import type { ApiConnection } from '../../core/parser';
+import type { RawDetection } from '../../core/normalize';
 
 /**
- * Patterns to detect Express route declarations.
- * Covers: app.get/post/put/delete/patch() and router.get/post/put/delete/patch()
+ * Detect Express route declarations.
+ * Supported patterns:
+ *   app.get("/api/...")
+ *   router.post("/api/...")
+ *   app.use("/api/...", handler)   → treated as method ALL
+ *
+ * Returns raw RawDetection[] — no normalization applied here.
  */
+
+// app|router .<verb>( "path" )
 const ROUTE_REGEX =
-  /(?:app|router)\.(get|post|put|delete|patch)\(\s*['"`](\/[^'"`\s)]+)['"`]/g;
+  /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*['"](\/?\/[^'"\s)]+)['"]/g;
 
-/**
- * Scan a single file's content for Express route definitions.
- */
-export function scanExpress(content: string, relPath: string): ApiConnection[] {
-  // Only look at JS/TS files
-  if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(relPath)) {
-    return [];
-  }
+// app|router .<verb>( `template` )
+const ROUTE_TEMPLATE_REGEX =
+  /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*`(\/[^`\s)]+)`/g;
 
-  const results: ApiConnection[] = [];
+export function scanExpress(content: string, relPath: string): RawDetection[] {
+  // Only process JS/TS files
+  if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(relPath)) { return []; }
+
+  // Heuristic: skip clear React component files that lack any Express usage
+  const hasExpressImport =
+    /require\s*\(\s*['"`]express['"`]/.test(content) ||
+    /from\s+['"`]express['"`]/.test(content) ||
+    /(?:app|router)\s*=\s*(?:express\(\)|Router\(\)|express\.Router\(\))/.test(content);
+
+  if (!hasExpressImport && /\.(tsx|jsx)$/.test(relPath)) { return []; }
+
+  const results: RawDetection[] = [];
   let match: RegExpExecArray | null;
 
+  // Literal string routes
+  ROUTE_REGEX.lastIndex = 0;
   while ((match = ROUTE_REGEX.exec(content)) !== null) {
     results.push({
-      from: relPath,
-      to: match[2],
-      method: match[1].toUpperCase(),
-      type: 'backend',
+      sourceFile: relPath,
+      rawPath:    match[2],
+      method:     match[1].toUpperCase() === 'USE' ? 'ALL' : match[1].toUpperCase(),
+      type:       'backend',
+      pathKind:   'literal',
+    });
+  }
+
+  // Template literal routes
+  ROUTE_TEMPLATE_REGEX.lastIndex = 0;
+  while ((match = ROUTE_TEMPLATE_REGEX.exec(content)) !== null) {
+    results.push({
+      sourceFile: relPath,
+      rawPath:    match[2],
+      method:     match[1].toUpperCase() === 'USE' ? 'ALL' : match[1].toUpperCase(),
+      type:       'backend',
+      pathKind:   'template',     // confidence 0.7
     });
   }
 
