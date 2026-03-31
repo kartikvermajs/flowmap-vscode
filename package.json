@@ -1,6 +1,7 @@
 {
   "name": "flowmap",
   "displayName": "FlowMap",
+  "publisher": "flowmap-dev",
   "description": "Visualizes frontend \u2192 backend API connections locally",
   "version": "0.0.1",
   "engines": {
@@ -11,7 +12,7 @@
     "Visualization"
   ],
   "activationEvents": [],
-  "main": "./dist/extension.js",
+  "main": "./dist/index.js",
   "contributes": {
     "commands": [
       {

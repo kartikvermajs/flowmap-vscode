@@ -158,8 +158,11 @@ export function buildGraph(connections: ApiCall[]): GraphData {
     }
   }
 
-  return {
+  const result = {
     nodes: Array.from(nodeMap.values()),
     edges,
   };
+
+  console.log(`[FlowMap] Graph built with ${result.nodes.length} nodes and ${result.edges.length} edges.`);
+  return result;
 }

@@ -70,6 +70,13 @@ export async function parseWorkspace(
     // ── Normalize (path cleanup + confidence scoring) ─────────────
     const normalized = normalizeDetections(raw, minConfidence);
 
+    if (normalized.length > 0) {
+      console.log(`[FlowMap] Detected ${normalized.length} calls in ${relPath}`);
+      normalized.forEach(c => 
+        console.log(`  - [${c.type}] ${c.method} ${c.normalizedPath} (conf: ${c.confidence})`)
+      );
+    }
+
     fileCache.set(absPath, { mtime, results: normalized });
     allCalls.push(...normalized);
   }
