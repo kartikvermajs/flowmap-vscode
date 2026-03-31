@@ -1,0 +1,14 @@
+.vscode/**
+.vscode-test/**
+out/**
+node_modules/**
+
+# include compiled output
+!dist/**
+!ui/dist/**
+
+# exclude dev files
+.gitignore
+tsconfig.json
+tsup.config.ts
+**/*.map

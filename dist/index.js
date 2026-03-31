@@ -56,18 +56,18 @@ var SKIP_PATH_PATTERNS = [
   /pages\/api\//,
   /app\/api\//
 ];
-function isFrontendFile(filePath) {
-  const ext = "." + filePath.split(".").pop();
+function isFrontendFile(sourceFile) {
+  const ext = "." + sourceFile.split(".").pop();
   if (!FRONTEND_EXTENSIONS.has(ext)) {
     return false;
   }
-  if (SKIP_PATH_PATTERNS.some((p) => p.test(filePath))) {
+  if (SKIP_PATH_PATTERNS.some((p) => p.test(sourceFile))) {
     return false;
   }
   return true;
 }
-function scanNextJs(content, relPath) {
-  if (!isFrontendFile(relPath)) {
+function scanNextJs(content, sourceFile) {
+  if (!isFrontendFile(sourceFile)) {
     return [];
   }
   const results = [];
@@ -75,7 +75,7 @@ function scanNextJs(content, relPath) {
   FETCH_LITERAL_REGEX.lastIndex = 0;
   while ((match = FETCH_LITERAL_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile,
       rawPath: match[1],
       method: match[2] ? match[2].toUpperCase() : "GET",
       type: "frontend",
@@ -85,7 +85,7 @@ function scanNextJs(content, relPath) {
   FETCH_TEMPLATE_REGEX.lastIndex = 0;
   while ((match = FETCH_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile,
       rawPath: match[1],
       method: "GET",
       // can't infer method from template alone
@@ -97,7 +97,7 @@ function scanNextJs(content, relPath) {
   AXIOS_LITERAL_REGEX.lastIndex = 0;
   while ((match = AXIOS_LITERAL_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile,
       rawPath: match[2],
       method: match[1].toUpperCase(),
       type: "frontend",
@@ -110,12 +110,12 @@ function scanNextJs(content, relPath) {
 // adapters/express/index.ts
 var ROUTE_REGEX = /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*['"](\/?\/[^'"\s)]+)['"]/g;
 var ROUTE_TEMPLATE_REGEX = /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*`(\/[^`\s)]+)`/g;
-function scanExpress(content, relPath) {
-  if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(relPath)) {
+function scanExpress(content, sourceFile) {
+  if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(sourceFile)) {
     return [];
   }
   const hasExpressImport = /require\s*\(\s*['"`]express['"`]/.test(content) || /from\s+['"`]express['"`]/.test(content) || /(?:app|router)\s*=\s*(?:express\(\)|Router\(\)|express\.Router\(\))/.test(content);
-  if (!hasExpressImport && /\.(tsx|jsx)$/.test(relPath)) {
+  if (!hasExpressImport && /\.(tsx|jsx)$/.test(sourceFile)) {
     return [];
   }
   const results = [];
@@ -123,7 +123,7 @@ function scanExpress(content, relPath) {
   ROUTE_REGEX.lastIndex = 0;
   while ((match = ROUTE_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile,
       rawPath: match[2],
       method: match[1].toUpperCase() === "USE" ? "ALL" : match[1].toUpperCase(),
       type: "backend",
@@ -133,7 +133,7 @@ function scanExpress(content, relPath) {
   ROUTE_TEMPLATE_REGEX.lastIndex = 0;
   while ((match = ROUTE_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile,
       rawPath: match[2],
       method: match[1].toUpperCase() === "USE" ? "ALL" : match[1].toUpperCase(),
       type: "backend",
@@ -224,14 +224,14 @@ async function parseWorkspace(filePaths, workspaceRoot, minConfidence = 0) {
     } catch {
       continue;
     }
-    const relPath = path.relative(workspaceRoot, absPath).replace(/\\/g, "/");
+    const sourceFile = path.relative(workspaceRoot, absPath).replace(/\\/g, "/");
     const raw = [
-      ...scanNextJs(content, relPath),
-      ...scanExpress(content, relPath)
+      ...scanNextJs(content, sourceFile),
+      ...scanExpress(content, sourceFile)
     ];
     const normalized = normalizeDetections(raw, minConfidence);
     if (normalized.length > 0) {
-      console.log(`[FlowMap] Detected ${normalized.length} calls in ${relPath}`);
+      console.log(`[FlowMap] Detected ${normalized.length} calls in ${sourceFile}`);
       normalized.forEach(
         (c) => console.log(`  - [${c.type}] ${c.method} ${c.normalizedPath} (conf: ${c.confidence})`)
       );

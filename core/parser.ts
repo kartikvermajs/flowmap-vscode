@@ -34,7 +34,6 @@ export async function parseWorkspace(
   const allCalls: ApiCall[] = [];
 
   for (const absPath of filePaths) {
-    // ── Cache check ─────────────────────────────────────────────
     let stat: fs.Stats;
     try {
       stat = fs.statSync(absPath);
@@ -51,7 +50,6 @@ export async function parseWorkspace(
       continue;
     }
 
-    // ── Read file ────────────────────────────────────────────────
     let content: string;
     try {
       content = fs.readFileSync(absPath, 'utf-8');
@@ -59,19 +57,17 @@ export async function parseWorkspace(
       continue;
     }
 
-    const relPath = path.relative(workspaceRoot, absPath).replace(/\\/g, '/');
+    const sourceFile = path.relative(workspaceRoot, absPath).replace(/\\/g, '/');
 
-    // ── Run adapters → get raw detections ────────────────────────
     const raw: RawDetection[] = [
-      ...scanNextJs(content, relPath),
-      ...scanExpress(content, relPath),
+      ...scanNextJs(content, sourceFile),
+      ...scanExpress(content, sourceFile),
     ];
 
-    // ── Normalize (path cleanup + confidence scoring) ─────────────
     const normalized = normalizeDetections(raw, minConfidence);
 
     if (normalized.length > 0) {
-      console.log(`[FlowMap] Detected ${normalized.length} calls in ${relPath}`);
+      console.log(`[FlowMap] Detected ${normalized.length} calls in ${sourceFile}`);
       normalized.forEach(c => 
         console.log(`  - [${c.type}] ${c.method} ${c.normalizedPath} (conf: ${c.confidence})`)
       );
@@ -81,7 +77,6 @@ export async function parseWorkspace(
     allCalls.push(...normalized);
   }
 
-  // ── Deduplicate ───────────────────────────────────────────────────
   // Key: type + sourceFile + method + normalizedPath
   const seen = new Set<string>();
   const unique: ApiCall[] = [];

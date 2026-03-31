@@ -18,9 +18,9 @@ const ROUTE_REGEX =
 const ROUTE_TEMPLATE_REGEX =
   /(?:app|router)\.(get|post|put|delete|patch|head|options|use)\(\s*`(\/[^`\s)]+)`/g;
 
-export function scanExpress(content: string, relPath: string): RawDetection[] {
+export function scanExpress(content: string, sourceFile: string): RawDetection[] {
   // Only process JS/TS files
-  if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(relPath)) { return []; }
+  if (!/\.(js|ts|jsx|tsx|mjs|cjs)$/.test(sourceFile)) { return []; }
 
   // Heuristic: skip clear React component files that lack any Express usage
   const hasExpressImport =
@@ -28,7 +28,7 @@ export function scanExpress(content: string, relPath: string): RawDetection[] {
     /from\s+['"`]express['"`]/.test(content) ||
     /(?:app|router)\s*=\s*(?:express\(\)|Router\(\)|express\.Router\(\))/.test(content);
 
-  if (!hasExpressImport && /\.(tsx|jsx)$/.test(relPath)) { return []; }
+  if (!hasExpressImport && /\.(tsx|jsx)$/.test(sourceFile)) { return []; }
 
   const results: RawDetection[] = [];
   let match: RegExpExecArray | null;
@@ -36,7 +36,7 @@ export function scanExpress(content: string, relPath: string): RawDetection[] {
   ROUTE_REGEX.lastIndex = 0;
   while ((match = ROUTE_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile: sourceFile,
       rawPath:    match[2],
       method:     match[1].toUpperCase() === 'USE' ? 'ALL' : match[1].toUpperCase(),
       type:       'backend',
@@ -47,7 +47,7 @@ export function scanExpress(content: string, relPath: string): RawDetection[] {
   ROUTE_TEMPLATE_REGEX.lastIndex = 0;
   while ((match = ROUTE_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile: sourceFile,
       rawPath:    match[2],
       method:     match[1].toUpperCase() === 'USE' ? 'ALL' : match[1].toUpperCase(),
       type:       'backend',

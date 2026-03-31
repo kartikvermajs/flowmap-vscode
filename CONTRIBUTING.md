@@ -14,11 +14,10 @@ Thanks for your interest in FlowMap! Every contribution, from bug fixes to new f
 2.  Install all dependencies:
     ```bash
     npm install
-    npm run build:ui  # Installs UI dependencies and runs build
     ```
-3.  Build the extension:
+3.  Build the extension and UI:
     ```bash
-    npm run compile
+    npm run build
     ```
 4.  Open the project in VS Code:
     ```bash
@@ -26,26 +25,24 @@ Thanks for your interest in FlowMap! Every contribution, from bug fixes to new f
     ```
 5.  Press **F5** to start the Extension Development Host.
 
-## 📐 Coding Guidelines
-
-### Consistency
+### Rules for Contributors
 -   Use **TypeScript** for all new code.
 -   Follow the existing **naming conventions**:
     -   `sourceFile` should always refer to the relative path of the file containing the API call/route.
     -   `normalizedPath` should be used after passing raw paths through the `core/normalize.ts` module.
 -   Keep functions small and focused on a single responsibility.
-
-### Commenting
--   Avoid redundant comments that describe obvious code behavior (e.g., `// Initialize map`).
+-   Avoid redundant comments that describe obvious code behavior.
 -   Include clear comments for **complex regex patterns**.
 -   Explain architectural decisions or non-trivial normalization logic.
+
+
 
 ## 🧩 How to Add a New Adapter
 
 Adapters are the heart of FlowMap's detection logic. To add support for a new framework (e.g., Fastify, Django, Axios-only projects):
 
 1.  Create a new directory in `/adapters/[your-framework]`.
-2.  Implement a `scan[Framework]` function that takes `content: string` and `relPath: string` as input.
+2.  Implement a `scan[Framework]` function that takes `content: string` and `sourceFile: string` as input.
 3.  Return an array of `RawDetection` objects.
 
 ### `RawDetection` Interface
@@ -65,9 +62,9 @@ interface RawDetection {
     import { scanYourFramework } from '../adapters/your-framework/index';
     // ...
     const raw: RawDetection[] = [
-      ...scanNextJs(content, relPath),
-      ...scanExpress(content, relPath),
-      ...scanYourFramework(content, relPath), // Add yours here
+      ...scanNextJs(content, sourceFile),
+      ...scanExpress(content, sourceFile),
+      ...scanYourFramework(content, sourceFile), // Add yours here
     ];
     ```
 

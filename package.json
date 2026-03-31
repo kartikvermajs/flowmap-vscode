@@ -23,6 +23,8 @@
   },
   "scripts": {
     "vscode:prepublish": "npm run package",
+    "clean": "node -e \"const fs=require('fs'); ['dist', 'ui/dist'].forEach(d => fs.rmSync(d, {recursive:true, force:true}))\"",
+    "build": "npm run clean && npm run compile && npm run build:ui",
     "compile": "tsup",
     "watch": "tsup --watch",
     "package": "tsup --minify",

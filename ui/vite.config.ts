@@ -5,9 +5,8 @@ import react from '@vitejs/plugin-react';
 export default defineConfig({
   plugins: [react()],
   build: {
-    // Output into the extension's dist/webview directory so the extension
-    // host can serve these assets directly.
-    outDir: '../dist/webview',
+    // Output into the ui/dist directory
+    outDir: 'dist',
     emptyOutDir: true,
     rollupOptions: {
       output: {

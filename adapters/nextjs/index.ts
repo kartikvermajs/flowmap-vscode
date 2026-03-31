@@ -34,15 +34,15 @@ const SKIP_PATH_PATTERNS = [
   /app\/api\//,
 ];
 
-function isFrontendFile(filePath: string): boolean {
-  const ext = '.' + filePath.split('.').pop();
+function isFrontendFile(sourceFile: string): boolean {
+  const ext = '.' + sourceFile.split('.').pop();
   if (!FRONTEND_EXTENSIONS.has(ext)) { return false; }
-  if (SKIP_PATH_PATTERNS.some((p) => p.test(filePath))) { return false; }
+  if (SKIP_PATH_PATTERNS.some((p) => p.test(sourceFile))) { return false; }
   return true;
 }
 
-export function scanNextJs(content: string, relPath: string): RawDetection[] {
-  if (!isFrontendFile(relPath)) { return []; }
+export function scanNextJs(content: string, sourceFile: string): RawDetection[] {
+  if (!isFrontendFile(sourceFile)) { return []; }
 
   const results: RawDetection[] = [];
   let match: RegExpExecArray | null;
@@ -50,7 +50,7 @@ export function scanNextJs(content: string, relPath: string): RawDetection[] {
   FETCH_LITERAL_REGEX.lastIndex = 0;
   while ((match = FETCH_LITERAL_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile: sourceFile,
       rawPath:    match[1],
       method:     match[2] ? match[2].toUpperCase() : 'GET',
       type:       'frontend',
@@ -61,7 +61,7 @@ export function scanNextJs(content: string, relPath: string): RawDetection[] {
   FETCH_TEMPLATE_REGEX.lastIndex = 0;
   while ((match = FETCH_TEMPLATE_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile: sourceFile,
       rawPath:    match[1],
       method:     'GET',           // can't infer method from template alone
       type:       'frontend',
@@ -72,7 +72,7 @@ export function scanNextJs(content: string, relPath: string): RawDetection[] {
   AXIOS_LITERAL_REGEX.lastIndex = 0;
   while ((match = AXIOS_LITERAL_REGEX.exec(content)) !== null) {
     results.push({
-      sourceFile: relPath,
+      sourceFile: sourceFile,
       rawPath:    match[2],
       method:     match[1].toUpperCase(),
       type:       'frontend',

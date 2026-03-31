@@ -1,0 +1,38 @@
+# FlowMap Project Capabilities Report
+
+**FlowMap** is a local visualization tool built as a Visual Studio Code extension. Its primary capability is to statically analyze a project's codebase to detect, map, and visualize API dependency graphs between frontend components and backend routes.
+
+## Core Capabilities
+
+### 1. Automated Project Scanning
+The extension deeply scans the active VS Code workspace (specifically targeting `.js, .jsx, .ts, .tsx, .mjs, .cjs` files) to extract API connection logic without requiring any runtime execution or network traffic monitoring.
+- **Command:** `flowmap.scanProject` triggers the process via the command palette.
+- **Performance Caching:** Includes an in-memory file caching system. It tracks file modification timestamps (`mtime`) to reuse previous scan results for unchanged files, significantly speeding up subsequent re-scans.
+- **Exclusion Filters:** Automatically skips irrelevant directories like `node_modules`, `.next`, `dist`, `build`, and `.git` to optimize speed and reduce noise.
+
+### 2. Frontend API Detection (Next.js & React)
+The system currently includes a specialized adapter for Next.js/React codebases that extracts outward-bound network requests.
+- **Fetch API Tracking:** Detects standard `fetch()` calls. It handles both literal strings (`fetch('/api/users')`) and template literals, and it successfully reads the configuration object to determine the HTTP method (e.g., `{ method: "POST" }`).
+- **Axios Tracking:** Detects standard Axios method calls like `axios.get(...)`, `axios.post(...)`, `axios.put(...)`, etc.
+- **Confidence Scoring:** Assigns confidence scores to detections (e.g., literal hardcoded paths receive higher confidence scores, whereas template literals with interpolated variables receive a lower score of `0.7`).
+
+### 3. Backend Route Detection (Express)
+The system includes a backend adapter that parses Express.js logic to map the server-side endpoints.
+- **Route Extraction:** Identifies route declarations such as `app.get()`, `router.post()`, and `app.use()`.
+- **Method Normalization:** Correctly maps verbs to standardized HTTP methods, interpreting `app.use()` as a catch-all `ALL` method.
+
+### 4. Interactive Graph Visualization
+The core engine compiles the matched frontend requests and backend routes into a unified structure.
+- **Three-Column Layout Engine:** Automatically organizes the data into a logical left-to-right flow:
+  1. **Left (Frontend):** The source files originating the requests.
+  2. **Center (Endpoints):** The unified API endpoints (grouped by method and path).
+  3. **Right (Backend):** The controller/route files fulfilling the request.
+- **Deduplication:** Merges identical API calls gracefully so the graph doesn't become cluttered with redundant lines.
+- **Custom Webview GUI:** Serves a React webview panel directly inside VS Code (built with Vite + React Flow). 
+- **Code Navigation:** Users can click on nodes within the visualization graph to instantly open the corresponding source file in their VS Code editor pane.
+
+## Technology Stack
+- **Extension Host:** TypeScript, native `vscode` APIs.
+- **Parsing/Analysis:** Custom Regex heuristics and string matching algorithms.
+- **UI Webview:** React 18, React Flow v11 (for node-based graphing), built via Vite.
+- **Bundler:** `tsup` for the extension host and `vite` for the webview frontend.
