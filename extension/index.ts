@@ -1,9 +1,11 @@
 import * as vscode from 'vscode';
 import * as path from 'path';
+import * as fs from 'fs';
 import { parseWorkspace, clearCache } from '../core/parser';
 import { buildGraph } from '../graph/builder';
 
 let currentPanel: vscode.WebviewPanel | undefined;
+
 const logger = {
   info: (msg: string, ...args: any[]) => console.log(`[FlowMap] ${msg}`, ...args),
   warn: (msg: string, ...args: any[]) => console.warn(`[FlowMap] ${msg}`, ...args),
@@ -12,6 +14,7 @@ const logger = {
 
 export function activate(context: vscode.ExtensionContext) {
   logger.info('Extension activated');
+
   const disposable = vscode.commands.registerCommand(
     'flowmap.scanProject',
     async () => {
@@ -23,6 +26,7 @@ export function activate(context: vscode.ExtensionContext) {
           );
           return;
         }
+
 
         const workspaceRoot = workspaceFolders[0].uri.fsPath;
         logger.info('Scan started for:', workspaceRoot);
@@ -40,6 +44,7 @@ export function activate(context: vscode.ExtensionContext) {
               '**/*.{ts,tsx,js,jsx,mjs,cjs}',
               '{**/node_modules/**,**/.next/**,**/dist/**,**/build/**,.git/**}'
             );
+
             const filePaths = fileUris.map((uri) => uri.fsPath);
             logger.info(`Found ${filePaths.length} files to scan`);
 
@@ -53,14 +58,17 @@ export function activate(context: vscode.ExtensionContext) {
 
             progress.report({ increment: 20, message: 'Opening webview...' });
             showWebview(context, graph, workspaceRoot);
+
             logger.info('Scan completed');
           }
         );
       } catch (err: any) {
         logger.error('Scan failed:', err);
-        vscode.window.showErrorMessage(`FlowMap: Scan failed. ${err.message || err}`);
+        vscode.window.showErrorMessage(`FlowMap: Scan failed.${err.message || err}`);
       }
     }
+
+
   );
 
   context.subscriptions.push(disposable);
@@ -75,6 +83,8 @@ function showWebview(
     ? vscode.window.activeTextEditor.viewColumn
     : undefined;
 
+  const uiDist = vscode.Uri.joinPath(context.extensionUri, 'ui', 'dist');
+
   if (currentPanel) {
     currentPanel.reveal(column);
     currentPanel.webview.postMessage({ type: 'update', graph });
@@ -87,9 +97,7 @@ function showWebview(
     column || vscode.ViewColumn.One,
     {
       enableScripts: true,
-      localResourceRoots: [
-        vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview'),
-      ],
+      localResourceRoots: [uiDist],
       retainContextWhenHidden: true,
     }
   );
@@ -100,25 +108,26 @@ function showWebview(
     async (message) => {
       switch (message.type) {
         case 'ready':
-          // Webview is mounted — send the current graph
           currentPanel?.webview.postMessage({ type: 'update', graph });
           break;
 
+
         case 'openFile': {
           const sourceFile: string = message.sourceFile;
-          if (!sourceFile) { break; }
+          if (!sourceFile) break;
+
           const absPath = path.join(workspaceRoot, sourceFile);
+
           try {
             const doc = await vscode.workspace.openTextDocument(absPath);
             await vscode.window.showTextDocument(doc, { preview: false });
           } catch {
-            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${sourceFile}`);
+            vscode.window.showWarningMessage(`FlowMap: Cannot open file: ${sourceFile} `);
           }
           break;
         }
 
         case 'rescan':
-          // User requested a re-scan from the webview
           clearCache();
           await vscode.commands.executeCommand('flowmap.scanProject');
           break;
@@ -126,10 +135,14 @@ function showWebview(
     },
     undefined,
     context.subscriptions
+
+
   );
 
   currentPanel.onDidDispose(
-    () => { currentPanel = undefined; },
+    () => {
+      currentPanel = undefined;
+    },
     null,
     context.subscriptions
   );
@@ -139,41 +152,28 @@ function getWebviewContent(
   context: vscode.ExtensionContext,
   webview: vscode.Webview
 ): string {
-  const scriptUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview', 'index.js')
-  );
-  const styleUri = webview.asWebviewUri(
-    vscode.Uri.joinPath(context.extensionUri, 'dist', 'webview', 'index.css')
+  const htmlPath = vscode.Uri.joinPath(
+    context.extensionUri,
+    'ui',
+    'dist',
+    'index.html'
   );
 
-  const nonce = getNonce();
+  let html = fs.readFileSync(htmlPath.fsPath, 'utf-8');
 
-  return /* html */ `<!DOCTYPE html>
-<html lang="en">
-  <head>
-    <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
-    <meta
-      http-equiv="Content-Security-Policy"
-      content="default-src 'none'; style-src ${webview.cspSource} 'unsafe-inline'; script-src 'nonce-${nonce}';"
-    />
-    <link rel="stylesheet" href="${styleUri}" />
-    <title>FlowMap</title>
-  </head>
-  <body>
-    <div id="root"></div>
-    <script nonce="${nonce}" src="${scriptUri}"></script>
-  </body>
-</html>`;
+  const baseUri = vscode.Uri.joinPath(context.extensionUri, 'ui', 'dist');
+
+  html = html.replace(/(src|href)="(.*?)"/g, (match, p1, p2) => {
+    if (p2.startsWith('http')) return match;
+
+
+    const resource = vscode.Uri.joinPath(baseUri, p2);
+    return `${p1}="${webview.asWebviewUri(resource)}"`;
+
+
+  });
+
+  return html;
 }
 
-function getNonce(): string {
-  let text = '';
-  const possible = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789';
-  for (let i = 0; i < 32; i++) {
-    text += possible.charAt(Math.floor(Math.random() * possible.length));
-  }
-  return text;
-}
-
-export function deactivate() {}
+export function deactivate() { }
