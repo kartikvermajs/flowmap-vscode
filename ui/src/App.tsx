@@ -272,7 +272,7 @@ export default function App() {
                     style={{ width: 'auto', padding: '4px 8px' }}
                     onClick={() => setFilterMethod(null)}
                   >
-                    All
+                    All methods
                   </button>
                   {availableMethods.map((m) => (
                     <button
