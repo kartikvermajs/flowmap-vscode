@@ -14,6 +14,7 @@ import ReactFlow, {
   useNodesState,
   useReactFlow,
   ReactFlowProvider,
+  useStore,
   type Connection,
   type NodeMouseHandler,
 } from 'reactflow';
@@ -36,38 +37,94 @@ function GraphCanvas({
   rawNodes,
   rawEdges,
   filterEndpoint,
+  filterMethod,
   onNodeClick,
 }: {
   rawNodes: FlowNode[];
   rawEdges: FlowEdge[];
   filterEndpoint: string | null;
+  filterMethod: string | null;
   onNodeClick: (node: FlowNode) => void;
 }) {
   const { fitView } = useReactFlow();
+  const width = useStore((s) => s.width);
+  const height = useStore((s) => s.height);
 
-  // Apply filter: show only connections through the selected endpoint
+  // Apply filter & Responsive Layout
   const { visibleNodes, visibleEdges } = useMemo(() => {
-    if (!filterEndpoint) {
-      return { visibleNodes: rawNodes, visibleEdges: rawEdges };
+    let edgesToKeep = rawEdges;
+    let nodesToKeep = rawNodes;
+
+    if (filterEndpoint || filterMethod) {
+      let validEndpointIds = new Set<string>();
+      rawNodes.forEach(n => {
+        if (n.data.kind === 'endpoint') {
+           const matchEndpoint = filterEndpoint ? n.id === filterEndpoint : true;
+           const matchMethod = filterMethod ? n.data.method === filterMethod : true;
+           if (matchEndpoint && matchMethod) {
+             validEndpointIds.add(n.id);
+           }
+        }
+      });
+
+      edgesToKeep = rawEdges.filter(
+        (e) => validEndpointIds.has(e.source) || validEndpointIds.has(e.target)
+      );
+      const relatedNodeIds = new Set<string>(validEndpointIds);
+      edgesToKeep.forEach((e) => {
+        relatedNodeIds.add(e.source);
+        relatedNodeIds.add(e.target);
+      });
+      nodesToKeep = rawNodes.filter((n) => relatedNodeIds.has(n.id));
     }
 
-    const relatedEdges = rawEdges.filter(
-      (e) => e.source === filterEndpoint || e.target === filterEndpoint
-    );
-    const relatedNodeIds = new Set<string>([filterEndpoint]);
-    relatedEdges.forEach((e) => {
-      relatedNodeIds.add(e.source);
-      relatedNodeIds.add(e.target);
-    });
-    const visibleNodes = rawNodes
-      .filter((n) => relatedNodeIds.has(n.id))
-      .map((n) => ({
-        ...n,
-        data: { ...n.data },
-        // dim unrelated nodes (none in filtered view but keep for type compat)
-      }));
-    return { visibleNodes, visibleEdges: relatedEdges };
-  }, [rawNodes, rawEdges, filterEndpoint]);
+    // Clone to ensure we don't mutate the raw state
+    const laidOutNodes = nodesToKeep.map((n) => ({
+      ...n,
+      data: { ...n.data },
+      position: { ...n.position }
+    }));
+
+    // Responsive grid math
+    const cw = width || 800;
+    const ch = height || 600;
+
+    const nodeW = 160;
+    const nodeH = 60;
+    const marginX = 40;
+
+    // Minimum spread to prevent overlapping on tiny windows
+    const spreadX = Math.max(600, cw - marginX * 2 - nodeW);
+    const colLeft = marginX;
+    const colRight = colLeft + spreadX;
+    const colCenter = colLeft + Math.floor(spreadX / 2);
+
+    const layoutCol = (kind: string, baseX: number) => {
+      const colNodes = laidOutNodes.filter((n) => n.data.kind === kind);
+      const count = colNodes.length;
+      if (!count) return;
+
+      const maxGap = 80;
+      const minGap = 20;
+      const availableHeight = ch - 80; // keep padding top/bottom
+      
+      const idealGap = count > 1 ? (availableHeight - count * nodeH) / (count - 1) : 0;
+      const gap = Math.min(maxGap, Math.max(minGap, idealGap));
+      
+      const blockHeight = count * nodeH + (count - 1) * gap;
+      const startY = Math.max(40, (ch - blockHeight) / 2);
+
+      colNodes.forEach((n, i) => {
+        n.position = { x: baseX, y: startY + i * (nodeH + gap) };
+      });
+    };
+
+    layoutCol('frontend', colLeft);
+    layoutCol('endpoint', colCenter);
+    layoutCol('backend', colRight);
+
+    return { visibleNodes: laidOutNodes, visibleEdges: edgesToKeep };
+  }, [rawNodes, rawEdges, filterEndpoint, width, height]);
 
   const [nodes, setNodes, onNodesChange] = useNodesState(visibleNodes);
   const [edges, setEdges, onEdgesChange] = useEdgesState(visibleEdges);
@@ -76,8 +133,9 @@ function GraphCanvas({
   useEffect(() => {
     setNodes(visibleNodes);
     setEdges(visibleEdges);
-    // Fit view after data settles
-    setTimeout(() => fitView({ padding: 0.15, duration: 400 }), 50);
+    // Fit view cleanly to constraints
+    const handle = window.setTimeout(() => fitView({ padding: 0.15 }), 50);
+    return () => clearTimeout(handle);
   }, [visibleNodes, visibleEdges, setNodes, setEdges, fitView]);
 
   const onConnect = useCallback(
@@ -127,13 +185,27 @@ export default function App() {
   const [rawEdges, setRawEdges] = useState<FlowEdge[]>([]);
   const [status, setStatus] = useState<'waiting' | 'loaded' | 'empty'>('waiting');
   const [filterEndpoint, setFilterEndpoint] = useState<string | null>(null);
+  const [filterMethod, setFilterMethod] = useState<string | null>(null);
   const [rescanning, setRescanning] = useState(false);
 
   // All unique endpoint node IDs for the filter sidebar
-  const endpointNodes = useMemo(
-    () => rawNodes.filter((n) => n.data.kind === 'endpoint'),
-    [rawNodes]
-  );
+  const endpointNodes = useMemo(() => {
+    let endpoints = rawNodes.filter((n) => n.data.kind === 'endpoint');
+    if (filterMethod) {
+      endpoints = endpoints.filter((n) => n.data.method === filterMethod);
+    }
+    return endpoints;
+  }, [rawNodes, filterMethod]);
+
+  const availableMethods = useMemo(() => {
+    const methods = new Set<string>();
+    rawNodes.forEach(n => {
+      if (n.data.kind === 'endpoint' && n.data.method) {
+        methods.add(n.data.method);
+      }
+    });
+    return Array.from(methods).sort();
+  }, [rawNodes]);
 
   // Receive graph data from extension host
   useEffect(() => {
@@ -163,6 +235,8 @@ export default function App() {
     if (node.data.kind === 'endpoint') {
       // Toggle filter on/off
       setFilterEndpoint((prev) => (prev === node.id ? null : node.id));
+      // Optionally clear method filter to prevent zero-results confusion
+      setFilterMethod(null);
     }
   }, []);
 
@@ -189,6 +263,31 @@ export default function App() {
 
         {status === 'loaded' && (
           <>
+            {availableMethods.length > 0 && (
+              <>
+                <div className="sidebar__section-title">Filter by Method</div>
+                <div className="sidebar__filter-list" style={{ flexDirection: 'row', flexWrap: 'wrap', gap: '4px', paddingBottom: '8px' }}>
+                  <button
+                    className={`sidebar__filter-item${filterMethod === null ? ' sidebar__filter-item--active' : ''}`}
+                    style={{ width: 'auto', padding: '4px 8px' }}
+                    onClick={() => setFilterMethod(null)}
+                  >
+                    All
+                  </button>
+                  {availableMethods.map((m) => (
+                    <button
+                      key={m}
+                      className={`sidebar__filter-item${filterMethod === m ? ' sidebar__filter-item--active' : ''}`}
+                      style={{ width: 'auto', padding: '4px 8px' }}
+                      onClick={() => setFilterMethod(m === filterMethod ? null : m)}
+                    >
+                      {m}
+                    </button>
+                  ))}
+                </div>
+              </>
+            )}
+
             <div className="sidebar__section-title">Filter by Endpoint</div>
             <div className="sidebar__filter-list">
               <button
@@ -258,6 +357,7 @@ export default function App() {
               rawNodes={rawNodes}
               rawEdges={rawEdges}
               filterEndpoint={filterEndpoint}
+              filterMethod={filterMethod}
               onNodeClick={handleNodeClick}
             />
           </ReactFlowProvider>

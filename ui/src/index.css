@@ -275,6 +275,11 @@ body {
 }
 
 /* ─── React Flow overrides ──────────────────────────────────────── */
+
+.react-flow__node {
+  transition: transform 0.25s ease-out;
+}
+
 .react-flow__controls {
   background: #24273a;
   border: 1px solid #313244;
